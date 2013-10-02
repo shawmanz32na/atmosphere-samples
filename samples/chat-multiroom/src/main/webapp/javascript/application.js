@@ -12,8 +12,8 @@ $(function () {
     var logged = false;
     var socket = atmosphere;
     var subSocket;
-    var transport = 'websocket';
-    var fallbackTransport = 'long-polling'
+    var transport = 'streaming';
+    var fallbackTransport = 'long-polling';
     var connected = false;
     var uuid = 0;
 
@@ -23,9 +23,12 @@ $(function () {
 
     input.keydown(function (e) {
         if (e.keyCode === 13) {
+			//Grab the value in the input text box
             var msg = $(this).val();
 
+			//Clear the input box
             $(this).val('');
+			
             if (!connected) {
                 connected = true;
                 connect(msg);
@@ -38,10 +41,15 @@ $(function () {
             }
 
             input.removeAttr('disabled').focus();
-            // Private message
+            // Check for custom actions (e.g. private message, exit room, etc.)
             if (msg.indexOf(":") !== -1) {
-                var a = msg.split(":")[0];
-                subSocket.push(atmosphere.util.stringifyJSON({ user: a, message: msg}));
+				var commands = msg.split(":");
+				if (commands[0] === "switch") { // "switch:[chatroom_name]" will switch rooms
+					socket.unsubscribe();
+					connect(commands[1]);
+				} else { // "[user]:[message]" will send private message to [user]
+					subSocket.push(atmosphere.util.stringifyJSON({ user: commands[0], message: commands[1]}));
+				}
             } else {
                 subSocket.push(atmosphere.util.stringifyJSON({ author: author, message: msg, uuid: uuid }));
             }
@@ -64,7 +72,9 @@ $(function () {
 
         request.onOpen = function (response) {
             content.html($('<p>', { text: 'Atmosphere connected using ' + response.transport }));
-            status.text('Choose name:');
+            if ((author == null) && (myName === false)) {
+				status.text('Choose name:');
+			}
             input.removeAttr('disabled').focus();
             transport = response.transport;
             uuid = response.request.uuid;
@@ -132,6 +142,9 @@ $(function () {
         };
 
         subSocket = socket.subscribe(request);
+		
+		//Grab a file from the server to simulate more info and commands incoming
+		getRoomText();
     }
 
     function addMessage(author, message, color, datetime) {
@@ -139,4 +152,17 @@ $(function () {
             + (datetime.getMinutes() < 10 ? '0' + datetime.getMinutes() : datetime.getMinutes())
             + ': ' + message + '</p>');
     }
+	
+	// JS AJAX Call to retrieve text file from server
+	function getRoomText() {
+		var xmlhttp;
+		xmlhttp = new XMLHttpRequest(); //code for IE7+, Firefox, Chrome, Opera, Safari
+		xmlhttp.onreadystatechange = function() {
+			if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+				alert(xmlhttp.responseText);
+			}
+		}
+		xmlhttp.open("GET","room_info_testroom.txt",true);
+		xmlhttp.send();
+	}
 });
