@@ -16,6 +16,8 @@ $(function () {
     var fallbackTransport = 'long-polling';
     var connected = false;
     var uuid = 0;
+	var reconnect = false;
+	var chatroomName; //Used only when switching chatrooms
 
     header.html($('<h3>', { text: 'Atmosphere Chat. Default transport is ' + transport + ', fallback is ' + fallbackTransport }));
     status.text('Choose chatroom:');
@@ -45,8 +47,23 @@ $(function () {
             if (msg.indexOf(":") !== -1) {
 				var commands = msg.split(":");
 				if (commands[0] === "switch") { // "switch:[chatroom_name]" will switch rooms
-					socket.unsubscribe();
-					connect(commands[1]);
+					// If you call this method, the new atmosphere connection will be stuck
+					// in a "pending" status. This will leave your application in an "in-between"
+					// state. Atmosphere will resort to long-polling, but will not resend the request.
+					// When this "pending" connection finally gets closed by the server,
+					// atmosphere will resend the request, and the command will be processed. By then,
+					// though, that request won't make sense, and you'll get unexpected results.
+					leaveChatRoom();
+					//Join new Chatroom while the old one is still closing
+					reconnect = true;
+					chatroomName = commands[1];
+					joinNewChatRoom();
+					getRoomText();
+				} else if (commands[0] === "exit") { // "exit:" will leave the chatroom
+					// If you call this method, the pop-up caused by 'getRoomText()' will never appear,
+					// because that HTTP request will get stuck in a "pending" state.
+					leaveChatRoom();
+					getRoomText();
 				} else { // "[user]:[message]" will send private message to [user]
 					subSocket.push(atmosphere.util.stringifyJSON({ user: commands[0], message: commands[1]}));
 				}
@@ -128,6 +145,8 @@ $(function () {
 
         request.onClose = function (response) {
             subSocket.push(atmosphere.util.stringifyJSON({ author: author, message: 'disconnecting' }));
+			content.html($('<p>', { text: 'atmosphere disconnected!' }));
+			joinNewChatRoom();
         };
 
         request.onError = function (response) {
@@ -153,7 +172,30 @@ $(function () {
             + ': ' + message + '</p>');
     }
 	
-	// JS AJAX Call to retrieve text file from server
+	// Unsubscribes from the current connection, and resets the global variables to reflect
+	// that status
+	function leaveChatRoom() {
+		socket.unsubscribe();
+		connected = false;
+		author = null;
+		myName = false;
+		status.text('Choose chatroom:');
+	}
+	
+	// Subscribes to the chatroom as specified in 'chatroomName'.
+	// Only attempts subscription if the 'reconnect' flag has been set, and the 'chatroomName' is not null.
+	function joinNewChatRoom() {
+		if (reconnect === true && chatroomName !== null) {
+			connect(chatroomName);
+			reconnect == false;
+			chatroomName = null;
+		}
+	}
+	
+	// JS AJAX Call to retrieve text file from server.
+	// We append a val parameter to the request string to make sure that the browser/webserver
+	// can't cache the request. Once the request is received, a pop-up will display with the
+	// contents of the file.
 	function getRoomText() {
 		var xmlhttp;
 		xmlhttp = new XMLHttpRequest(); //code for IE7+, Firefox, Chrome, Opera, Safari
@@ -162,7 +204,7 @@ $(function () {
 				alert(xmlhttp.responseText);
 			}
 		}
-		xmlhttp.open("GET","room_info_testroom.txt",true);
+		xmlhttp.open("GET","room_info_testroom.txt?val=" + new Date().getTime(),true);
 		xmlhttp.send();
 	}
 });
